@@ -1,0 +1,28 @@
+{
+  "name": "razorpay-smart-recovery",
+  "version": "1.0.0",
+  "description": "Payment orchestrator with smart recovery, Vault encryption, and AI routing",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "worker": "node src/workers/recovery.worker.js",
+    "scheduler": "node src/workers/recovery.scheduler.js",
+    "check-services": "node scripts/check-services.js",
+    "setup": "node scripts/check-services.js",
+    "migrate": "node scripts/migrate.js",
+    "init-vault": "node scripts/init-vault.js",
+    "verify-audit": "node scripts/verify-audit-chain.js",
+    "dev": "node scripts/migrate.js && node src/server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "bullmq": "^5.34.8",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1"
+  }
+}

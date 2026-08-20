@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: payment_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecretPassword123}
+      POSTGRES_DB: ${DB_NAME:-payment_orchestrator}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-orchestrator} -d ${DB_NAME:-payment_orchestrator}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: payment_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: payment_vault
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-root_dev_token_2026}
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault_data:/vault/file
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  vault-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment_vault_init
+    command: ["node", "scripts/init-vault.js"]
+    env_file: .env
+    environment:
+      VAULT_ADDR: http://vault:8200
+    depends_on:
+      vault:
+        condition: service_healthy
+    restart: "no"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment_migrate
+    command: ["node", "scripts/migrate.js"]
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      VAULT_ADDR: http://vault:8200
+      AGENT_SERVICE_URL: http://agent:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: payment_agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AGENT_PORT: 8000
+    ports:
+      - "${AGENT_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment_api
+    restart: unless-stopped
+    command: ["node", "src/server.js"]
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      VAULT_ADDR: http://vault:8200
+      AGENT_SERVICE_URL: http://agent:8000
+      RUN_MIGRATIONS_ON_START: "false"
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      agent:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment_worker
+    restart: unless-stopped
+    command: ["node", "src/workers/recovery.worker.js"]
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      VAULT_ADDR: http://vault:8200
+      AGENT_SERVICE_URL: http://agent:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      agent:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment_scheduler
+    restart: unless-stopped
+    command: ["node", "src/workers/recovery.scheduler.js"]
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  vault_data:
+    driver: local

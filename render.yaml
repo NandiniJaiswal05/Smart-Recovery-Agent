@@ -1,0 +1,126 @@
+services:
+  - type: web
+    name: smart-recovery-api
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    preDeployCommand: npm run migrate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smart-recovery-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: smart-recovery-kv
+          type: keyvalue
+          property: connectionString
+      - key: AGENT_SERVICE_URL
+        fromService:
+          name: smart-recovery-agent
+          type: pserv
+          property: hostport
+      - key: APP_BASE_URL
+        value: https://smart-recovery-api.onrender.com
+      - key: DB_SSL
+        value: "false"
+      - key: VAULT_MODE
+        value: mock
+      - key: VAULT_MOCK_SECRET
+        generateValue: true
+      - key: HMAC_SECRET
+        generateValue: true
+      - key: RECOVERY_DELAY_MS
+        value: "1800000"
+      - key: MAX_RECOVERY_ATTEMPTS
+        value: "3"
+      - key: RAZORPAY_MODE
+        value: demo
+      - key: STRIPE_MODE
+        value: demo
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-20250514
+
+  - type: pserv
+    name: smart-recovery-agent
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile.agent
+    dockerContext: .
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-20250514
+      - key: AGENT_PORT
+        value: "8000"
+
+  - type: worker
+    name: smart-recovery-worker
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smart-recovery-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: smart-recovery-kv
+          type: keyvalue
+          property: connectionString
+      - key: AGENT_SERVICE_URL
+        fromService:
+          name: smart-recovery-agent
+          type: pserv
+          property: hostport
+      - key: DB_SSL
+        value: "false"
+      - key: VAULT_MODE
+        value: mock
+      - key: VAULT_MOCK_SECRET
+        fromService:
+          name: smart-recovery-api
+          type: web
+          envVarKey: VAULT_MOCK_SECRET
+      - key: HMAC_SECRET
+        fromService:
+          name: smart-recovery-api
+          type: web
+          envVarKey: HMAC_SECRET
+      - key: RECOVERY_DELAY_MS
+        value: "1800000"
+      - key: MAX_RECOVERY_ATTEMPTS
+        value: "3"
+      - key: RAZORPAY_MODE
+        value: demo
+      - key: STRIPE_MODE
+        value: demo
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-20250514
+
+  - type: keyvalue
+    name: smart-recovery-kv
+    plan: starter
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+
+databases:
+  - name: smart-recovery-db
+    plan: basic-256mb
+    databaseName: payment_orchestrator
+    user: orchestrator
+    postgresMajorVersion: "16"
