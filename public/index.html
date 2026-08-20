@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Smart Recovery Command Center</title>
+  <style>
+    :root{--bg:#f6f8fb;--panel:#fff;--ink:#142033;--muted:#6b778c;--line:#e5e9f0;--accent:#2563eb;--good:#0f9d58;--warn:#b7791f;--bad:#d14343}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+    header{background:#101828;color:white;padding:22px 5vw;display:flex;justify-content:space-between;gap:20px;align-items:center}
+    header h1{font-size:22px;margin:0}header p{margin:4px 0 0;color:#b9c2d0;font-size:13px}.pill{border:1px solid #344054;border-radius:999px;padding:7px 12px;font-size:12px}
+    main{max-width:1250px;margin:30px auto;padding:0 22px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 2px 8px #10182808}
+    .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.value{font-size:28px;font-weight:750;margin-top:8px}.sub{font-size:12px;color:var(--muted);margin-top:4px}
+    .section{margin-top:22px}.section h2{font-size:17px;margin:0 0 12px}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    button{border:0;border-radius:9px;padding:10px 14px;background:var(--accent);color:#fff;font-weight:650;cursor:pointer}button.secondary{background:#eef2f7;color:#344054}
+    table{width:100%;border-collapse:collapse;font-size:13px}.tablewrap{overflow:auto}.card th,.card td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}.card th{font-size:11px;color:var(--muted);text-transform:uppercase}
+    .status{font-weight:700}.SUCCESS{color:var(--good)}.SOFT_DECLINED,.PENDING{color:var(--warn)}.HARD_DECLINED,.FAILED{color:var(--bad)}
+    .demo{margin-top:22px}.form{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.form input,.form select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:white}
+    .notice{margin-top:12px;background:#fff7e6;border:1px solid #f3d19c;padding:12px;border-radius:10px;color:#704b12;font-size:12px}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.form{grid-template-columns:1fr 1fr}}@media(max-width:600px){.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>Smart Recovery Command Center</h1><p>Automated payment recovery • AI routing • retry orchestration</p></div>
+  <div class="pill" id="mode">Connecting…</div>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><div class="label">Transactions</div><div class="value" id="total">—</div><div class="sub">All payment attempts</div></div>
+    <div class="card"><div class="label">Recovered</div><div class="value" id="recovered">—</div><div class="sub" id="recoveredValue">₹0 recovered</div></div>
+    <div class="card"><div class="label">At risk</div><div class="value" id="risk">—</div><div class="sub" id="riskValue">₹0 pending recovery</div></div>
+    <div class="card"><div class="label">Hard declined</div><div class="value" id="hard">—</div><div class="sub">No further automatic retry</div></div>
+  </div>
+
+  <section class="card section">
+    <div class="toolbar"><h2>Recovery pipeline</h2><button class="secondary" onclick="load()">Refresh</button></div>
+    <div class="tablewrap">
+      <table><thead><tr><th>Transaction</th><th>Amount</th><th>Status</th><th>Acquirer</th><th>Attempts</th><th>Next retry</th><th>Created</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7">Loading…</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <section class="card demo section">
+    <h2>Demo: create a payment</h2>
+    <div class="form">
+      <input id="tx" placeholder="Transaction ID" />
+      <input id="merchant" value="demo_merchant" placeholder="Merchant ID" />
+      <input id="amount" type="number" value="1499" placeholder="Amount" />
+      <select id="gateway"><option>RAZORPAY</option><option>STRIPE</option><option>PAYPAL</option></select>
+      <button onclick="createPayment()">Run payment</button>
+    </div>
+    <div class="notice">Demo mode only. The repository's gateway adapters simulate outcomes unless live gateway flags are explicitly enabled. Do not enter real card data.</div>
+    <pre id="result" style="white-space:pre-wrap;font-size:12px;color:#475467"></pre>
+  </section>
+</main>
+<script>
+const money=(v,c='INR')=>new Intl.NumberFormat('en-IN',{style:'currency',currency:c,maximumFractionDigits:2}).format(Number(v||0));
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+async function load(){
+  try{
+    const r=await fetch('/api/v1/dashboard/summary'); const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Dashboard error');
+    const m=d.metrics||{};
+    total.textContent=m.total??0; recovered.textContent=m.recovered??0; risk.textContent=m.at_risk??0; hard.textContent=m.hard_declined??0;
+    recoveredValue.textContent=money(m.recovered_value); riskValue.textContent=money(m.at_risk_value);
+    mode.textContent=d.demo_mode?'DEMO / SIMULATION':'LIVE GATEWAY MODE';
+    rows.innerHTML=(d.transactions||[]).map(t=>`<tr>
+      <td>${esc(t.transaction_id)}</td><td>${money(t.amount,t.currency)}</td>
+      <td class="status ${esc(t.status)}">${esc(t.status)}</td>
+      <td>${esc(t.current_acquirer||t.primary_acquirer)}</td>
+      <td>${t.attempt_count}/${t.max_attempts}</td>
+      <td>${t.retry_scheduled_at?new Date(t.retry_scheduled_at).toLocaleString():'—'}</td>
+      <td>${new Date(t.created_at).toLocaleString()}</td>
+    </tr>`).join('') || '<tr><td colspan="7">No transactions yet.</td></tr>';
+  }catch(e){mode.textContent='API ERROR'; rows.innerHTML=`<tr><td colspan="7">${esc(e.message)}</td></tr>`}
+}
+async function createPayment(){
+  const id=tx.value.trim() || `demo_${Date.now()}`; tx.value=id;
+  const payload={transaction_id:id,amount:Number(amount.value||1499),currency:'INR',primary_acquirer:gateway.value,
+    card_payload:{brand:'VISA',country:'IN',number:'4111111111111111',exp_month:12,exp_year:2030,cvc:'123'}};
+  try{
+    const r=await fetch('/api/v1/payments',{method:'POST',headers:{'Content-Type':'application/json','X-Merchant-ID':merchant.value,'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify(payload)});
+    const d=await r.json(); result.textContent=JSON.stringify(d,null,2); await load();
+  }catch(e){result.textContent=e.message}
+}
+load(); setInterval(load,15000);
+</script>
+</body>
+</html>
