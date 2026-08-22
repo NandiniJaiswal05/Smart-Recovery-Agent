@@ -5,4 +5,4 @@ RUN npm ci --omit=dev
 COPY . .
 ENV NODE_ENV=production
 ENV PORT=8080
-CMD ["node","src/server.js"]
+CMD ["node","src/workers/recovery.worker.js"]

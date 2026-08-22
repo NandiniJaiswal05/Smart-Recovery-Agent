@@ -1,28 +1,28 @@
 {
   "name": "razorpay-smart-recovery",
-  "version": "1.0.0",
-  "description": "Payment orchestrator with smart recovery, Vault encryption, and AI routing",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Security-first AI payment recovery MVP for Razorpay Test Mode and Stripe Test Mode on Google Cloud.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "worker": "node src/workers/recovery.worker.js",
-    "scheduler": "node src/workers/recovery.scheduler.js",
-    "check-services": "node scripts/check-services.js",
-    "setup": "node scripts/check-services.js",
     "migrate": "node scripts/migrate.js",
-    "init-vault": "node scripts/init-vault.js",
     "verify-audit": "node scripts/verify-audit-chain.js",
-    "dev": "node scripts/migrate.js && node src/server.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "check": "node --check src/server.js && node --check src/workers/recovery.worker.js && node --check src/services/payment.service.js && node --check src/services/gateway.service.js && node --check src/services/cloud-tasks.service.js && node --check src/middleware/security.js && node --check src/services/agent.client.js",
+    "test": "node --test"
   },
   "dependencies": {
+    "@google-cloud/tasks": "^5.5.0",
     "axios": "^1.7.9",
-    "bullmq": "^5.34.8",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "ioredis": "^5.4.2",
+    "google-auth-library": "^9.15.0",
+    "helmet": "^8.0.0",
     "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

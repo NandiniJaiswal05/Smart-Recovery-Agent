@@ -1,57 +1,72 @@
-# Razorpay Smart Recovery Agent
+# Razorpay Smart Recovery Agent — GCP MVP
 
-A deployable prototype for automated recovery of failed/soft-declined payments.
+Security-first automated recovery agent for failed payments.
 
-## What is included
+## MVP stack
 
-- Express payment API
-- PostgreSQL transaction + recovery state
-- BullMQ/Render Key Value delayed retry queue
-- Python FastAPI routing agent
-- AI routing through Anthropic with deterministic fallback
-- Recovery worker that asks the agent for the next acquirer
-- HMAC recovery links
-- Hash-chained transaction audit log
-- Render-ready dashboard at `/`
-- Render Blueprint (`render.yaml`) for the API, agent, worker, Key Value and Postgres
+- Razorpay Test Mode
+- Stripe Test Mode
+- Node.js / Express API
+- Python FastAPI recovery agent
+- Vertex AI Gemini
+- Cloud Run
+- Cloud SQL PostgreSQL
+- Cloud Tasks
+- Secret Manager
+- Artifact Registry
+- Hash-chained audit log
 
-## Important production boundary
+## Core principle
 
-This repository is a prototype/demo architecture. Do **not** send or store real PAN/CVC data in the current demo adapters. For a production payment recovery system, use gateway-issued payment method tokens/network tokens and the gateway's official retry/recovery APIs. Replace the local/mock Vault mode with a managed secret/tokenization architecture before handling live customer payment credentials.
+**Vertex AI proposes. Deterministic security code disposes.**
 
-The bundled gateway adapters simulate outcomes by default. Live gateway integrations are intentionally not enabled.
+The LLM cannot:
+- change payment amount/currency
+- access credentials
+- invent payment gateways
+- bypass retry limits
+- authorize arbitrary actions
 
-## Local
+The action guard is the final authorization boundary.
+
+## Test-only payment model
+
+The MVP deliberately does not accept or store raw PAN/CVC. Test gateway outcomes are simulated deterministically, while the architecture is ready to be connected to official Razorpay/Stripe test PaymentMethod/token APIs.
+
+This avoids accidentally creating an insecure card-data vault during the MVP.
+
+## Run locally
 
 ```bash
 npm install
-docker compose up -d postgres redis vault
+# configure PostgreSQL and .env from .env.example
 npm run migrate
 npm start
 ```
 
-Open `http://localhost:3000`.
+For the AI agent:
 
-## Render
+```bash
+cd agent
+pip install -r requirements.txt
+python server.py
+```
 
-The included `render.yaml` creates:
+## GCP
 
-1. `smart-recovery-api` — public Express web service + dashboard
-2. `smart-recovery-agent` — private FastAPI service
-3. `smart-recovery-worker` — BullMQ background worker
-4. `smart-recovery-kv` — Render Key Value
-5. `smart-recovery-db` — Render Postgres
+See `gcp/README.md`.
 
-Create the Blueprint from Render, supply `ANTHROPIC_API_KEY` if you want Claude routing, and set the generated `HMAC_SECRET` / `VAULT_MOCK_SECRET` values.
+## Security
 
-The API runs migrations through Render's pre-deploy command.
+Webhook signature verification, replay protection, idempotency, rate limiting, internal worker authentication, action allowlisting, retry limits, and audit/security events are included from the beginning.
 
-### Why there is no Render Vault service
+## Production boundary
 
-Render does not provide HashiCorp Vault as a native managed resource. The Blueprint therefore uses the application's `VAULT_MODE=mock` only for a prototype deployment. For production, replace this with a real managed Vault/KMS/tokenization solution.
-
-## Recovery flow
-
-Payment -> soft decline -> recovery schedule -> BullMQ delayed job -> AI routing decision -> secondary acquirer -> success or another scheduled retry -> hard decline after max attempts.
-
-The dashboard is an operational prototype and should be protected with authentication/SSO before production exposure.
+Before live payments:
+- use gateway-issued PaymentMethod/token references
+- complete gateway/webhook production integration
+- use Secret Manager/KMS
+- enforce IAM service-to-service authentication
+- add merchant/dashboard authentication
+- add Cloud Armor/WAF and monitoring
+- complete applicable PCI/security/compliance review
